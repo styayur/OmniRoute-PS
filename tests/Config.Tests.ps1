@@ -85,4 +85,25 @@ Describe 'Configuration validation' {
         $result.valid | Should -BeFalse
         @($result.errors | ForEach-Object { $_.message }) -join ';' | Should -Match 'Literal API keys are prohibited'
     }
+
+    It 'defaults CORS to disabled and exposes server limits' {
+        $path = Join-Path $TestDrive 'defaults.json'
+        $validConfig | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
+        $result = Test-OmniRouteConfig -Path $path
+        $result.valid | Should -BeTrue
+        $result.config.http.cors.enabled | Should -BeFalse
+        $result.config.http.cors.allowedOrigins.Count | Should -Be 0
+        $result.config.server.minWorkers | Should -Be 2
+        $result.config.server.maxWorkers | Should -BeGreaterThan 0
+        $result.config.server.maxQueuedRequests | Should -Be 64
+    }
+
+    It 'rejects an invalid CORS origin' {
+        $validConfig.http = @{ cors = @{ enabled = $true; allowedOrigins = @('https://example.com/path') } }
+        $path = Join-Path $TestDrive 'bad-cors.json'
+        $validConfig | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $path -Encoding utf8
+        $result = Test-OmniRouteConfig -Path $path
+        $result.valid | Should -BeFalse
+        @($result.errors | ForEach-Object { $_.path }) | Should -Contain 'http.cors.allowedOrigins'
+    }
 }

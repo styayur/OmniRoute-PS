@@ -3,10 +3,13 @@ $ErrorActionPreference = 'Stop'
 
 $script:OmniRouteTestRoot = Split-Path -Parent $PSScriptRoot
 
+. (Join-Path $script:OmniRouteTestRoot 'src/Version.ps1')
 . (Join-Path $script:OmniRouteTestRoot 'src/Logging.ps1')
 . (Join-Path $script:OmniRouteTestRoot 'src/Config.ps1')
+. (Join-Path $script:OmniRouteTestRoot 'src/Protocol.ps1')
 . (Join-Path $script:OmniRouteTestRoot 'src/Transport.ps1')
 . (Join-Path $script:OmniRouteTestRoot 'src/Adapters.ps1')
+. (Join-Path $script:OmniRouteTestRoot 'src/Metrics.ps1')
 . (Join-Path $script:OmniRouteTestRoot 'src/Health.ps1')
 . (Join-Path $script:OmniRouteTestRoot 'src/Router.ps1')
 . (Join-Path $script:OmniRouteTestRoot 'src/Server.ps1')
@@ -42,6 +45,7 @@ function New-OmniRouteTestProvider {
         headers        = $Headers
         models         = $Models
         healthPath     = ''
+        capabilities   = @{ chat = $true; responses = $true; messages = $true; tools = $true; vision = $false; streaming = $true }
     }
 }
 
@@ -69,6 +73,8 @@ function New-OmniRouteTestConfig {
         circuitBreaker        = @{ failureThreshold = $CircuitFailureThreshold; openSeconds = $CircuitOpenSeconds; halfOpenMaxAttempts = 1 }
         fallbackOnStatus      = @(429, 500, 502, 503, 504)
         logging               = @{ level = 'information'; format = 'console' }
+        server                = @{ minWorkers = 2; maxWorkers = 4; maxQueuedRequests = 16; shutdownGraceSeconds = 2 }
+        http                  = @{ cors = @{ enabled = $false; allowedOrigins = @() } }
         providers             = $Providers
         routes                = $Routes
         aliases               = $Aliases

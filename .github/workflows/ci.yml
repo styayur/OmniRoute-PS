@@ -54,11 +54,13 @@ jobs:
           $result = Invoke-Pester -Path ./tests -Output Detailed -PassThru
           if ($result.FailedCount -gt 0) { exit 1 }
 
-      - name: Validate configuration
+      - name: Validate configuration and schema
         shell: pwsh
         run: |
-          $result = pwsh -NoProfile -File ./omniroute.ps1 check -Config ./omniroute.example.json -Json | ConvertFrom-Json
+          $result = pwsh -NoProfile -File ./omniroute.ps1 config validate -Config ./omniroute.example.json -Json | ConvertFrom-Json
           if (-not $result.valid) { exit 1 }
+          $schema = pwsh -NoProfile -File ./omniroute.ps1 config schema -Json | ConvertFrom-Json
+          if (-not $schema.title) { exit 1 }
 
       - name: Startup smoke test
         shell: pwsh
@@ -73,8 +75,8 @@ jobs:
             $ready = $false
             for ($i = 0; $i -lt 50; $i++) {
               try {
-                $health = Invoke-RestMethod "http://127.0.0.1:$port/health" -TimeoutSec 2
-                if ($health.status) { $ready = $true; break }
+                $live = Invoke-RestMethod "http://127.0.0.1:$port/health/live" -TimeoutSec 2
+                if ($live.status -eq 'ok') { $ready = $true; break }
               }
               catch { Start-Sleep -Milliseconds 200 }
             }
@@ -84,6 +86,15 @@ jobs:
             }
             $models = Invoke-RestMethod "http://127.0.0.1:$port/v1/models" -TimeoutSec 5
             if (@($models.data).Count -eq 0) { throw 'Model list was empty.' }
+            try {
+              $readyState = Invoke-RestMethod "http://127.0.0.1:$port/health/ready" -TimeoutSec 5
+              if ($readyState.ready -ne $true) { throw 'Readiness response did not report ready.' }
+            }
+            catch {
+              if ([int]$_.Exception.Response.StatusCode -ne 503) { throw }
+            }
+            $metrics = Invoke-WebRequest "http://127.0.0.1:$port/metrics" -TimeoutSec 5
+            if ($metrics.Content -notmatch 'omniroute_requests_total') { throw 'Metrics endpoint missing counters.' }
           }
           finally {
             Stop-Job -Job $job -ErrorAction SilentlyContinue

@@ -18,6 +18,7 @@ Describe 'OmniRoute model resolution and candidate routing' {
         }
         $aliases = @{ fast = 'deepseek-chat'; local = 'qwen3:8b' }
         $config = New-OmniRouteTestConfig -Providers $providers -Routes $routes -Aliases $aliases
+        $requirement = @{ protocol = 'chat'; tools = $false; vision = $false; streaming = $false }
     }
 
     It 'matches a wildcard route' {
@@ -49,7 +50,7 @@ Describe 'OmniRoute model resolution and candidate routing' {
     It 'orders candidates by priority and route order' {
         $state = New-OmniRouteState
         $route = Resolve-OmniRouteModel -Config $config -Model 'gpt-5'
-        $candidates = Get-OmniRouteCandidates -Config $config -State $state -Route $route
+        $candidates = Get-OmniRouteCandidates -Config $config -State $state -Route $route -Requirement $requirement
         @($candidates).Count | Should -Be 2
         $candidates[0].provider.id | Should -Be 'openai'
         $candidates[1].provider.id | Should -Be 'deepseek'
@@ -60,7 +61,7 @@ Describe 'OmniRoute model resolution and candidate routing' {
         $primary = $config.providers['ollama']
         Set-OmniProviderFailure -State $state -Provider $primary -Config $config -Error (ConvertTo-OmniRouteUpstreamError -Message 'down' -Status 503 -Retryable $true)
         $route = Resolve-OmniRouteModel -Config $config -Model 'qwen3:8b'
-        $candidates = Get-OmniRouteCandidates -Config $config -State $state -Route $route
+        $candidates = Get-OmniRouteCandidates -Config $config -State $state -Route $route -Requirement $requirement
         @($candidates | ForEach-Object { $_.provider.id }) | Should -Not -Contain 'ollama'
     }
 
@@ -69,8 +70,18 @@ Describe 'OmniRoute model resolution and candidate routing' {
         $config.providers['deepseek'].priority = 50
         $state = New-OmniRouteState
         $route = Resolve-OmniRouteModel -Config $config -Model 'gpt-5'
-        $candidates = Get-OmniRouteCandidates -Config $config -State $state -Route $route
+        $candidates = Get-OmniRouteCandidates -Config $config -State $state -Route $route -Requirement $requirement
         $candidates[0].provider.id | Should -Be 'openai'
         $candidates[1].provider.id | Should -Be 'deepseek'
+    }
+
+    It 'filters providers that do not satisfy tool capabilities' {
+        $config.providers['deepseek'].capabilities.tools = $false
+        $state = New-OmniRouteState
+        $route = Resolve-OmniRouteModel -Config $config -Model 'deepseek-chat'
+        $toolRequirement = @{ protocol = 'chat'; tools = $true; vision = $false; streaming = $false }
+        $candidates = Get-OmniRouteCandidates -Config $config -State $state -Route $route -Requirement $toolRequirement
+        @($candidates | ForEach-Object { $_.provider.id }) | Should -Not -Contain 'deepseek'
+        @($candidates | ForEach-Object { $_.provider.id }) | Should -Contain 'openai'
     }
 }

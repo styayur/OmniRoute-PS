@@ -4,6 +4,18 @@
   "requestTimeoutSeconds": 120,
   "maxRequestBodyBytes": 1048576,
   "healthCacheSeconds": 15,
+  "server": {
+    "minWorkers": 2,
+    "maxWorkers": 8,
+    "maxQueuedRequests": 64,
+    "shutdownGraceSeconds": 5
+  },
+  "http": {
+    "cors": {
+      "enabled": false,
+      "allowedOrigins": []
+    }
+  },
   "retry": {
     "maxAttempts": 2,
     "baseDelayMs": 100
@@ -25,7 +37,8 @@
       "apiKeyEnv": "OPENAI_API_KEY",
       "priority": 100,
       "enabled": true,
-      "models": ["gpt-5", "gpt-5-mini"]
+      "models": ["gpt-5", "gpt-5-mini"],
+      "capabilities": { "chat": true, "responses": true, "messages": true, "tools": true, "vision": false, "streaming": true }
     },
     "deepseek": {
       "type": "openai",
@@ -57,7 +70,8 @@
       "baseUrl": "http://127.0.0.1:11434/v1",
       "priority": 40,
       "enabled": true,
-      "models": ["qwen3:8b", "llama3.2:3b"]
+      "models": ["qwen3:8b", "llama3.2:3b"],
+      "capabilities": { "chat": true, "responses": true, "messages": true, "tools": true, "vision": false, "streaming": true }
     },
     "lmstudio": {
       "type": "custom-openai",

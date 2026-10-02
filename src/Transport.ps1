@@ -21,7 +21,7 @@ function Get-OmniRouteHttpClient {
             $handler.PooledConnectionLifetime = [TimeSpan]::FromMinutes(5)
             $client = [System.Net.Http.HttpClient]::new($handler, $true)
             $client.Timeout = [System.Threading.Timeout]::InfiniteTimeSpan
-            $client.DefaultRequestHeaders.UserAgent.ParseAdd('OmniRoute-PS/0.1.0')
+            $client.DefaultRequestHeaders.UserAgent.ParseAdd((Get-OmniRouteUserAgent))
             $script:OmniRouteHttpClient = $client
         }
     }
@@ -225,7 +225,7 @@ function Invoke-OmniRouteUpstreamRequest {
     }
 }
 
-function Open-OmniRouteUpstreamStream {
+function Start-OmniRouteUpstreamStream {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][hashtable]$Provider,

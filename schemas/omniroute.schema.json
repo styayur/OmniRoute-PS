@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/styayur/OmniRoute-PS/main/schemas/omniroute.schema.json",
+  "title": "OmniRoute-PS configuration",
+  "type": "object",
+  "required": ["providers", "routes"],
+  "properties": {
+    "listen": { "type": "string", "default": "127.0.0.1" },
+    "port": { "type": "integer", "minimum": 1, "maximum": 65535, "default": 20128 },
+    "requestTimeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 3600, "default": 120 },
+    "maxRequestBodyBytes": { "type": "integer", "minimum": 1024, "maximum": 16777216, "default": 1048576 },
+    "healthCacheSeconds": { "type": "integer", "minimum": 1, "maximum": 300, "default": 15 },
+    "server": {
+      "type": "object",
+      "properties": {
+        "minWorkers": { "type": "integer", "minimum": 1, "maximum": 128, "default": 2 },
+        "maxWorkers": { "type": "integer", "minimum": 1, "maximum": 128, "default": 8 },
+        "maxQueuedRequests": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 64 },
+        "shutdownGraceSeconds": { "type": "integer", "minimum": 0, "maximum": 300, "default": 5 }
+      },
+      "additionalProperties": false
+    },
+    "http": {
+      "type": "object",
+      "properties": {
+        "cors": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "allowedOrigins": { "type": "array", "items": { "type": "string", "format": "uri" }, "default": [] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "retry": {
+      "type": "object",
+      "properties": {
+        "maxAttempts": { "type": "integer", "minimum": 1, "maximum": 5, "default": 2 },
+        "baseDelayMs": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 100 }
+      },
+      "additionalProperties": false
+    },
+    "circuitBreaker": {
+      "type": "object",
+      "properties": {
+        "failureThreshold": { "type": "integer", "minimum": 1, "maximum": 100, "default": 3 },
+        "openSeconds": { "type": "integer", "minimum": 1, "maximum": 3600, "default": 30 },
+        "halfOpenMaxAttempts": { "type": "integer", "minimum": 1, "maximum": 10, "default": 1 }
+      },
+      "additionalProperties": false
+    },
+    "fallbackOnStatus": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 400, "maximum": 599 },
+      "default": [429, 500, 502, 503, 504]
+    },
+    "logging": {
+      "type": "object",
+      "properties": {
+        "level": { "enum": ["debug", "information", "warning", "error"], "default": "information" },
+        "format": { "enum": ["console", "json"], "default": "console" }
+      },
+      "additionalProperties": false
+    },
+    "providers": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "baseUrl"],
+        "properties": {
+          "type": { "enum": ["openai", "custom-openai", "ollama", "anthropic", "gemini"] },
+          "baseUrl": { "type": "string", "format": "uri" },
+          "apiKeyEnv": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+          "apiKeyHeader": { "type": "string" },
+          "apiKeyPrefix": { "type": "string" },
+          "priority": { "type": "integer", "minimum": -10000, "maximum": 10000 },
+          "enabled": { "type": "boolean" },
+          "timeoutSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+          "headers": { "type": "object", "additionalProperties": { "type": "string" } },
+          "models": { "type": "array", "items": { "type": "string" } },
+          "healthPath": { "type": "string" },
+          "capabilities": {
+            "type": "object",
+            "properties": {
+              "chat": { "type": "boolean" },
+              "responses": { "type": "boolean" },
+              "messages": { "type": "boolean" },
+              "tools": { "type": "boolean" },
+              "vision": { "type": "boolean" },
+              "streaming": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "routes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "type": "string" }
+      }
+    },
+    "aliases": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

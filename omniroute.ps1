@@ -5,6 +5,9 @@ param(
     [Parameter(Position = 0)]
     [string]$Command = 'help',
 
+    [Parameter(Position = 1)]
+    [string]$Subcommand,
+
     [Alias('Config')]
     [string]$ConfigPath,
 
@@ -25,10 +28,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:OmniRouteVersion = '0.1.0'
+. (Join-Path $PSScriptRoot 'src/Version.ps1')
+$script:OmniRouteVersion = Get-OmniRouteVersion
 $debugEnabled = $PSBoundParameters.ContainsKey('Debug') -or $DebugPreference -ne 'SilentlyContinue'
 $script:OmniRouteRoot = $PSScriptRoot
 
+if ($Command -eq 'config' -and $Subcommand -eq 'schema') {
+    $schemaPath = Join-Path $PSScriptRoot 'schemas/omniroute.schema.json'
+    if (-not (Test-Path -LiteralPath $schemaPath -PathType Leaf)) { throw "Schema file not found: $schemaPath" }
+    if ($Json) { Get-Content -LiteralPath $schemaPath -Raw } else { $schemaPath }
+    exit 0
+}
 if ($Command -eq 'version') {
     $versionResult = [pscustomobject]@{
         name     = 'OmniRoute-PS'
@@ -42,8 +52,10 @@ if ($Command -eq 'version') {
 
 . (Join-Path $PSScriptRoot 'src/Logging.ps1')
 . (Join-Path $PSScriptRoot 'src/Config.ps1')
+. (Join-Path $PSScriptRoot 'src/Protocol.ps1')
 . (Join-Path $PSScriptRoot 'src/Transport.ps1')
 . (Join-Path $PSScriptRoot 'src/Adapters.ps1')
+. (Join-Path $PSScriptRoot 'src/Metrics.ps1')
 . (Join-Path $PSScriptRoot 'src/Health.ps1')
 . (Join-Path $PSScriptRoot 'src/Router.ps1')
 . (Join-Path $PSScriptRoot 'src/Server.ps1')
@@ -72,7 +84,7 @@ function Write-OmniRouteCliOutput {
 
 function Show-OmniRouteHelp {
     @(
-        'OmniRoute-PS 0.1.0'
+        ("OmniRoute-PS $script:OmniRouteVersion")
         ''
         'Usage:'
         '  pwsh ./omniroute.ps1 <command> [options]'
@@ -84,6 +96,7 @@ function Show-OmniRouteHelp {
         '  providers   List configured providers and safe metadata.'
         '  test        Validate configuration; use -Live to probe providers.'
         '  check       Validate configuration and report warnings.'
+        '  config      config schema | config validate'
         '  version     Print the version.'
         '  help        Show this help.'
         ''
@@ -160,6 +173,7 @@ function Get-OmniRouteProviderSummary {
             circuitState  = if ($null -eq $health) { 'unknown' } else { $health.circuitState }
             health        = if ($null -eq $health) { 'unknown' } else { $health.state }
             latencyMs     = if ($null -eq $health) { $null } else { $health.latencyMs }
+            capabilities  = $provider.capabilities
         })
     }
     return @($items)
@@ -194,6 +208,8 @@ if ($PSBoundParameters.ContainsKey('BindHost') -and -not [string]::IsNullOrWhite
 if ($PSBoundParameters.ContainsKey('Port') -and $Port -gt 0) { $config.port = $Port }
 if ($PSBoundParameters.ContainsKey('LogFormat')) { $config.logging.format = $LogFormat }
 if ($debugEnabled) { $config.logging.level = 'debug' }
+
+if ($Command -eq 'config' -and $Subcommand -eq 'validate') { $Command = 'check' }
 
 switch ($Command.ToLowerInvariant()) {
     'serve' {

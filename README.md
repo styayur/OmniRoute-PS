@@ -6,7 +6,7 @@
 
 **A small, local-first OpenAI-compatible LLM router for PowerShell 7.**
 
-**Status:** 🟡 Beta · **Version:** `0.1.0`
+**Status:** 🟡 Beta · **Version:** `0.2.0`
 
 [Quick Start](#quick-start) · [Configuration](#configuration) · [Architecture](#architecture) · [Releases](https://github.com/styayur/OmniRoute-PS/releases) · [Issues](https://github.com/styayur/OmniRoute-PS/issues)
 
@@ -40,17 +40,25 @@ out of scope for this repository.
 
 ## Features
 
-- `GET /health`, `GET /v1/models`, `POST /v1/chat/completions`, and a limited
-  `POST /v1/responses` compatibility layer.
-- OpenAI Chat Completions formatting, including pass-through of ordinary request fields.
-- True streaming SSE with `HttpCompletionOption.ResponseHeadersRead`; responses are not
-  buffered before forwarding.
+- OpenAI-compatible `GET /v1/models`, `POST /v1/chat/completions`, and limited
+  `POST /v1/responses`.
+- Native Anthropic `POST /v1/messages`, including streaming SSE for Claude Code.
+- Canonical Protocol IR shared by OpenAI Chat Completions, OpenAI Responses, and
+  Anthropic Messages.
+- Cross-protocol tools for OpenAI, Anthropic, and Gemini core paths.
 - OpenAI-compatible upstream providers, Anthropic Messages, Gemini `generateContent`,
   Ollama OpenAI compatibility, and custom OpenAI-compatible endpoints.
 - Wildcard routes, exact routes, model aliases, and explicit `provider:model` selection.
-- Priority-aware scoring, health penalties, failure penalties, and ordered fallback.
+- Capability-aware routing for protocol, tools, vision, and streaming support.
+- Priority-aware scoring, refined availability/latency/rate-limit/failure penalties, and
+  ordered fallback.
 - In-process circuit breaker: `Closed`, `Open`, and `HalfOpen`.
-- JSON configuration validation with environment-variable secret references.
+- Reusable `RunspacePool` workers with bounded queueing and `503` overload behavior.
+- `GET /health`, `GET /health/live`, `GET /health/ready`, and Prometheus-compatible
+  `GET /metrics`.
+- Atomic config hot reload with debounce; invalid reloads retain the last valid config.
+- CORS disabled by default and restricted to an explicit allowlist when enabled.
+- JSON Schema for editor completion and validation.
 - Structured console or JSON logs with redaction of authorization values, tokens,
   cookies, API keys, secrets, and passwords.
 - No runtime npm, Python, database, browser, Electron, or third-party PowerShell module
@@ -143,6 +151,14 @@ The default lookup order is:
 
 `OMNIROUTE_HOST` and `OMNIROUTE_PORT` override `listen` and `port`.
 
+The JSON Schema is [schemas/omniroute.schema.json](schemas/omniroute.schema.json).
+Editors can use it for completion and validation.
+
+```powershell
+pwsh ./omniroute.ps1 config schema
+pwsh ./omniroute.ps1 config validate
+```
+
 Minimal example:
 
 ```json
@@ -150,6 +166,18 @@ Minimal example:
   "listen": "127.0.0.1",
   "port": 20128,
   "requestTimeoutSeconds": 120,
+  "server": {
+    "minWorkers": 2,
+    "maxWorkers": 8,
+    "maxQueuedRequests": 64,
+    "shutdownGraceSeconds": 5
+  },
+  "http": {
+    "cors": {
+      "enabled": false,
+      "allowedOrigins": []
+    }
+  },
   "retry": {
     "maxAttempts": 2,
     "baseDelayMs": 100
@@ -166,7 +194,8 @@ Minimal example:
       "apiKeyEnv": "OPENAI_API_KEY",
       "priority": 100,
       "enabled": true,
-      "models": ["gpt-5", "gpt-5-mini"]
+      "models": ["gpt-5", "gpt-5-mini"],
+      "capabilities": { "chat": true, "responses": true, "messages": true, "tools": true, "vision": false, "streaming": true }
     },
     "deepseek": {
       "type": "openai",
@@ -181,7 +210,8 @@ Minimal example:
       "baseUrl": "http://127.0.0.1:11434/v1",
       "priority": 40,
       "enabled": true,
-      "models": ["qwen3:8b"]
+      "models": ["qwen3:8b"],
+      "capabilities": { "chat": true, "responses": true, "messages": true, "tools": true, "vision": false, "streaming": true }
     }
   },
   "routes": {
@@ -223,6 +253,7 @@ Provider fields:
 | `priority` | Higher values are preferred before latency and failure penalties are applied. |
 | `enabled` | Set to `false` to remove a provider from routing without deleting it. |
 | `models` | Model IDs advertised by `GET /v1/models`. |
+| `capabilities` | `chat`, `responses`, `messages`, `tools`, `vision`, and `streaming` booleans used by capability-aware routing. |
 | `headers` | Non-sensitive static headers only. Sensitive header names are rejected. |
 
 ## OpenAI-compatible usage
@@ -267,6 +298,31 @@ Invoke-RestMethod `
   -Body '{"model":"reasoning","input":"Say hello in one sentence."}'
 ```
 
+### Anthropic Messages / Claude Code
+
+OmniRoute-PS now exposes a native inbound Anthropic Messages endpoint:
+
+```powershell
+Invoke-RestMethod `
+  -Uri 'http://127.0.0.1:20128/v1/messages' `
+  -Method Post `
+  -ContentType 'application/json' `
+  -Body '{"model":"claude-test","max_tokens":256,"messages":[{"role":"user","content":[{"type":"text","text":"Hello"}]}]}'
+```
+
+Streaming uses Anthropic event names:
+
+```text
+event: message_start
+event: content_block_delta
+event: message_delta
+event: message_stop
+```
+
+For Claude Code, point its Anthropic base URL at `http://127.0.0.1:20128` if the
+client version allows a custom Messages API base URL. OmniRoute-PS translates the
+Messages request into the Canonical IR and then to the selected upstream provider.
+
 ## Codex example
 
 Codex supports user-level custom model providers through `~/.codex/config.toml`.
@@ -285,7 +341,7 @@ env_key = "OMNIROUTE_PS_KEY"
 ```
 
 Set `OMNIROUTE_PS_KEY` to a local placeholder value. OmniRoute-PS does not require
-client-side authentication in v0.1.0, but some clients require an environment-key field
+client-side authentication in v0.2.0, but some clients require an environment-key field
 to be present. Do not reuse a real upstream API key for this value.
 
 ## Other client configuration
@@ -299,10 +355,14 @@ to be present. Do not reuse a real upstream API key for this value.
 - **OpenCode:** configure an OpenAI-compatible provider with the same base URL and model
   IDs. Keep provider-specific auth at OmniRoute-PS; the client-facing placeholder is
   local only.
-- **Claude Code:** native Claude Code expects the Anthropic Messages API. OmniRoute-PS
-  v0.1.0 does not expose an inbound `/v1/messages` facade, so native Claude Code is not a
-  drop-in target yet. Use it through a client that can translate Anthropic Messages to
-  OpenAI Chat Completions, or track the roadmap item for inbound Anthropic compatibility.
+- **Claude Code:** point its Anthropic Messages base URL at
+  `http://127.0.0.1:20128` when the client version supports a custom Messages API base URL.
+  OmniRoute-PS exposes native `/v1/messages` and Anthropic-style SSE.
+
+  ```powershell
+  $env:ANTHROPIC_BASE_URL = 'http://127.0.0.1:20128'
+  $env:ANTHROPIC_API_KEY = 'local-placeholder'
+  ```
 
 ## Provider adapters
 
@@ -317,80 +377,176 @@ to be present. Do not reuse a real upstream API key for this value.
 Adding another OpenAI-compatible provider normally requires only a new JSON provider
 block. Do not add a new class or adapter for every service.
 
-## Routing, fallback, and circuit breaking
+## RunspacePool server
+
+v0.2.0 replaces ThreadJob-per-request with a reusable native
+`System.Management.Automation.Runspaces.RunspacePool`.
+
+```text
+HTTP listener accepts request
+  -> bounded capacity check
+  -> PowerShell pipeline uses a pooled runspace
+  -> Invoke-OmniRouteHttpContext runs
+  -> worker returns to pool
+```
+
+- Workers import `src/OmniRoute.psm1` once at pool startup.
+- No request re-dot-sources source files.
+- `minWorkers`, `maxWorkers`, and `maxQueuedRequests` are bounded by config.
+- Saturation returns structured HTTP `503` with `Retry-After: 1`.
+- Client write failures cancel the associated upstream stream.
+- Shutdown stops acceptance, waits a bounded grace period, cancels remaining work,
+  and disposes the listener and runspace pool.
+
+## Canonical protocol IR
+
+OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages are normalized
+into one internal request/response shape before routing.
+
+```text
+Inbound protocol
+  -> Canonical IR
+  -> Router
+  -> Provider adapter
+  -> Canonical response/event
+  -> Inbound protocol
+```
+
+The IR includes:
+
+```text
+model
+messages[]
+  role
+  content[] text/image/tool_call/tool_result
+tools[]
+toolChoice
+stream
+generation temperature/topP/maxTokens/stop
+metadata
+```
+
+Streaming events are normalized to `message_start`, `content_delta`,
+`tool_call_start`, `tool_call_delta`, `message_end`, `error`, and `done`.
+
+## Protocol compatibility matrix
+
+| Client / API | Chat | Responses | Messages | SSE | Tools |
+| --- | --- | --- | --- | --- | --- |
+| Codex custom OpenAI provider | ✅ | ✅ limited | — | ✅ | ✅ OpenAI ↔ provider core paths |
+| Claude Code Anthropic base URL | — | — | ✅ | ✅ | ✅ Anthropic ↔ provider core paths |
+| Cline OpenAI Compatible | ✅ | ✅ limited | — | ✅ | ✅ OpenAI ↔ provider core paths |
+| Continue OpenAI provider | ✅ | ✅ limited | — | ✅ | ✅ OpenAI ↔ provider core paths |
+| OpenCode OpenAI provider | ✅ | ✅ limited | — | ✅ | ✅ OpenAI ↔ provider core paths |
+
+“Limited” means documented and tested core fields, not every advanced Responses
+or tool edge case. Unsupported fields return `unsupported_feature` or
+`unsupported_parameter` instead of being silently dropped.
+
+## Routing, fallback, and runtime state
 
 Routing flow:
 
 ```text
 model
   -> alias resolution
-  -> explicit provider prefix, when present
-  -> most-specific route pattern
-  -> enabled and currently usable candidates
-  -> score = priority - failure penalty - latency penalty - health penalty
-  -> attempt in score order
-  -> success, or fallback to the next candidate
+  -> explicit provider prefix
+  -> most-specific route
+  -> enabled + capable + model-compatible candidates
+  -> score
+  -> attempt
+  -> success / fallback
 ```
 
-Supported route examples:
+Capability filtering happens before scoring. A request that needs tools, vision,
+streaming, Responses, or Messages will not be sent to a provider that declares the
+corresponding capability as `false`.
+
+Provider runtime state includes availability, latency, moving average, rate-limit
+temporary penalty, circuit state, recent error class, last success/failure, and
+model incompatibility tracking.
+
+Circuit breaking is driven only by provider availability errors:
+
+- timeout;
+- DNS/socket/connection failure;
+- HTTP `502`, `503`, `504`;
+- malformed upstream response.
+
+HTTP `429` records a temporary routing penalty but does not mark the provider down.
+HTTP `400` is ignored for circuit purposes. HTTP `401`/`403` is recorded as an auth
+problem. `model_not_found` marks only that model/provider pair temporarily incompatible.
+
+Fallback is attempted for timeouts, connection failures, malformed responses,
+HTTP `429`, HTTP `500`, and the configured `5xx` list. It is not attempted for
+ordinary invalid requests or unsupported protocol features.
+
+## SSE implementation
+
+When `stream: true` is requested:
+
+1. OmniRoute-PS opens the upstream response with `HttpCompletionOption.ResponseHeadersRead`.
+2. It reads incrementally with `StreamReader`.
+3. It parses `event:` and `data:` fields into complete events.
+4. It converts provider events into Canonical streaming events.
+5. It renders OpenAI `data:` chunks, Responses events, or Anthropic SSE events.
+6. It flushes every event immediately.
+7. It cancels/disposes upstream work if the client stops reading.
+
+Streaming fallback is not possible after upstream response headers have been sent; an
+error event is emitted instead.
+
+## Health, readiness, metrics, and reload
+
+Health endpoints:
+
+| Endpoint | Meaning |
+| --- | --- |
+| `GET /health/live` | Process liveness only; does not depend on providers. |
+| `GET /health/ready` | Worker pool is initialized and at least one provider is usable. |
+| `GET /health` | Full provider runtime state, config revision, and worker snapshot. |
+| `GET /metrics` | Prometheus text exposition without a Prometheus SDK. |
+
+Metrics include requests, active requests, queued requests, durations, provider
+requests/failures, fallback count, circuit-open count, and active streams. Labels
+are bounded to provider IDs and contain no prompts, request bodies, tokens,
+cookies, or authorization values.
+
+Config reload uses file-change polling with debounce. A candidate file is parsed
+and validated before an atomic `ConfigState.Current` swap. Invalid reloads retain the
+previous config and do not interrupt existing streams. Changes to `listen`/`port`
+require a restart; all future requests use the new config object.
+
+## CORS
+
+CORS is disabled by default. When enabled, only explicit origins are allowed:
 
 ```json
-{
-  "routes": {
-    "gpt-*": ["openai", "deepseek"],
-    "deepseek-*": ["deepseek", "openai", "ollama"],
-    "*": ["deepseek", "openai", "ollama"]
+"http": {
+  "cors": {
+    "enabled": true,
+    "allowedOrigins": ["http://localhost:3000"]
   }
 }
 ```
 
-Fallback is attempted for timeouts, connection failures, malformed upstream responses,
-HTTP `429`, and the configured `5xx` status list. HTTP `400`, `401`, and `403` are not
-fallback candidates by default because retrying them usually hides a configuration or
-request error.
-
-Circuit breaker defaults:
-
-```text
-3 consecutive failures -> Open
-30 seconds in Open      -> HalfOpen
-one successful probe    -> Closed
-failed probe            -> Open
-```
-
-Health is passive by default: successful and failed requests update provider state.
-`test -Live` performs explicit probes. This avoids continuously hammering paid endpoints.
-
-## SSE implementation
-
-When `stream: true` is requested, OmniRoute-PS:
-
-1. Opens the upstream response with `HttpCompletionOption.ResponseHeadersRead`.
-2. Reads the upstream body incrementally with a `StreamReader`.
-3. Parses `event:` and `data:` SSE fields into complete events.
-4. Converts provider-native events into OpenAI-compatible chunks when needed.
-5. Flushes each event to the client immediately.
-6. Stops on `[DONE]`, or appends `[DONE]` when a provider stream ends without one.
-7. Cancels and disposes the upstream response when the client write fails.
-
-An upstream failure after headers have already been sent is reported as an SSE error
-event; fallback is not possible once the response body has begun.
+Wildcard origins and credentials are not supported.
 
 ## Security
 
 - Default bind address is `127.0.0.1`.
 - Binding to `0.0.0.0` prints an explicit network-exposure warning.
-- Client authentication is not implemented in v0.1.0. Do not expose the router to an
+- Client authentication is not implemented in v0.2.0. Do not expose the router to an
   untrusted network.
 - API keys are read from environment variables named by `apiKeyEnv`.
 - Literal `apiKey` properties and sensitive custom headers are rejected by configuration
   validation.
 - API keys, authorization headers, cookies, tokens, secrets, passwords, and prompt bodies
-  are never written to normal logs.
+  are never written to normal logs or metrics.
 - Upstream URLs are restricted to absolute `http` or `https` URLs without credentials,
   query strings, or fragments.
-- `file://`, malformed headers, CR/LF header injection, and oversized request bodies are
-  rejected.
+- CORS is disabled by default and uses an explicit allowlist when enabled.
+- Malformed headers, CR/LF injection, and oversized request bodies are rejected.
 - Client errors and upstream errors are returned as structured JSON without PowerShell
   stack traces. `-Debug` adds diagnostic detail only to the local console.
 
@@ -403,19 +559,21 @@ Import-Module Pester
 Invoke-Pester -Path .\tests -Output Detailed
 ```
 
-Current test coverage includes:
+Current coverage includes:
 
-- configuration parsing and validation;
-- wildcard, exact, alias, explicit-provider, priority, unhealthy-provider, and fallback
-  order behavior;
-- circuit breaker state transitions;
-- normal JSON responses;
-- HTTP `429` and `500` fallback;
-- timeout, malformed response, and connection-refused normalization;
-- delayed SSE chunks;
-- `[DONE]` forwarding;
-- cancellation when the client stream write fails;
-- actual HTTP startup and endpoint smoke tests.
+- configuration parsing, schema, CORS, server limits, and provider capabilities;
+- Canonical IR normalization for OpenAI, Responses, and Anthropic;
+- OpenAI/Anthropic/Gemini tool mappings and tool-result round trips;
+- routing, aliases, exact/wildcard routes, priority, capability filtering, unhealthy
+  providers, fallback order, rate-limit penalties, auth errors, model incompatibility,
+  and circuit transitions;
+- RunspacePool-backed HTTP server startup, bounded queue overload `503`, worker reuse, and bounded shutdown;
+- `/v1/chat/completions`, limited `/v1/responses`, and native `/v1/messages`;
+- OpenAI and Anthropic SSE with delayed chunks and no full buffering;
+- client write failure cancellation and stream cleanup;
+- liveness/readiness/full health and Prometheus text output;
+- valid and invalid config hot reload;
+- no ThreadJob-per-request or per-request full dot-source audit.
 
 Static analysis:
 
@@ -428,22 +586,26 @@ Invoke-ScriptAnalyzer -Path .\omniroute.ps1 -Settings .\PSScriptAnalyzerSettings
 
 ## Benchmarks
 
-Measured on 2026-10-02 with PowerShell `7.6.5` on Windows
-`10.0.26200`, using the self-contained local mock provider in
-[`scripts/benchmark.ps1`](scripts/benchmark.ps1):
+Measured on 2026-10-03 with PowerShell `7.6.5` on Windows `10.0.26200`,
+using the self-contained local mock provider in
+[`scripts/benchmark.ps1`](scripts/benchmark.ps1).
 
-| Metric | Result |
-| --- | ---: |
-| `version` cold-start average, 5 runs | 965.9 ms |
-| Routing-only average, 10,000 iterations | 0.5248 ms |
-| 100 sequential local mock completions | 359.47 ms average |
-| 20 parallel local mock completions | 1,997.6 ms total |
-| Router idle working set after startup | 109.7 MB |
-| Router loaded working set after benchmark | 109.7 MB |
+| Metric | v0.1.0 baseline | v0.2.0 |
+| --- | ---: | ---: |
+| `version` cold start, 5-run average | 1037.7 ms | 872.7 ms |
+| Routing-only, 10,000 iterations | 0.5939 ms | 0.6958 ms |
+| 100 sequential local mock completions | 172.5 ms/request | 21.95 ms/request |
+| 20 parallel local mock completions | 1056.5 ms total | 815.4 ms total |
+| 50 parallel local mock completions | not measured | 552.0 ms total |
+| SSE first-chunk router delay | not measured | 108.6 ms |
+| Router idle working set | 106.3 MB | 109.7 MB |
+| Router loaded working set | 106.3 MB | 109.7 MB |
+| ThreadJob per request | 1 | 0 |
+| Per-request full dot-source | yes | no |
 
-These are single-machine observations, not a performance guarantee. The current server
-uses a ThreadJob per accepted request; that keeps the implementation small and auditable
-but adds latency and memory overhead under heavy local load.
+These are single-machine observations, not performance guarantees. Startup and
+routing-only numbers vary with system load; sequential HTTP throughput is the clear
+v0.2 architectural improvement.
 
 Run the benchmark yourself:
 
@@ -456,12 +618,15 @@ pwsh ./scripts/benchmark.ps1 -Json
 
 ```text
 omniroute.ps1
-  -> Config.ps1       validate JSON, environment overrides, provider/routes/aliases
-  -> Transport.ps1    shared HttpClient, retries, timeouts, cancellation, SSE streams
-  -> Adapters.ps1     protocol conversion for OpenAI/Anthropic/Gemini/Ollama
-  -> Health.ps1       passive health, scoring inputs, circuit breaker state
-  -> Router.ps1       model resolution, candidate scoring, fallback, stream handling
-  -> Server.ps1       HttpListener, request limits, endpoint dispatch, response flushing
+  -> Version.ps1      one version source for CLI, health, and User-Agent
+  -> Protocol.ps1     canonical request/response/stream IR and tool mapping
+  -> Config.ps1       schema-validated config, capabilities, CORS, server limits
+  -> Transport.ps1    shared HttpClient, retries, timeouts, cancellation, SSE
+  -> Adapters.ps1     endpoint/header resolution per protocol family
+  -> Metrics.ps1      bounded counters and Prometheus text output
+  -> Health.ps1       refined runtime state, readiness, circuit breaker
+  -> Router.ps1       capability-aware candidate selection, fallback, stream conversion
+  -> Server.ps1       RunspacePool, bounded queue, hot reload, health/metrics endpoints
   -> Logging.ps1      redacted console and JSON logs
 ```
 
@@ -470,42 +635,43 @@ cross-process coordination.
 
 ## Limitations
 
-- OpenAI Responses API support is intentionally limited to the documented fields.
-- Native inbound Anthropic Messages compatibility (`/v1/messages`) is not included yet;
-  Anthropic is supported only as an upstream provider.
-- Tool/function calls are passed through for OpenAI-family providers but are not fully
-  translated for Anthropic, Gemini, or Ollama.
+- The OpenAI Responses layer supports the documented core fields and core tool mapping,
+  not every advanced field or hosted tool.
+- Tool translation covers the four required core paths, but exotic provider-specific
+  tool schemas may return `unsupported_feature`.
 - Streaming fallback cannot happen after response headers are sent.
-- Health and circuit state are local to one process and reset on restart.
+- Health, metrics, circuit state, and rate-limit state are process-local and reset on
+  restart.
+- Changing `listen` or `port` via hot reload requires a restart; future requests use
+  the new provider/routes/alias values.
 - No client authentication, accounts, quotas, dashboards, MCP, MITM, proxy mode, or
   multi-user management.
-- The current ThreadJob-per-request server is optimized for clarity and local use, not
-  high-concurrency production traffic.
-- The measured idle working set is above the project's aspirational 80 MB target because
-  of the PowerShell runtime and per-request runspaces.
+- The measured idle working set remains above the aspirational 80 MB target because of
+  the PowerShell runtime and pooled runspaces.
+- PowerShell 7.4+ is required; Windows PowerShell 5.1 is not supported.
 
 ## Roadmap
 
 ### Current
 
-- Stable local OpenAI-compatible routing, fallback, circuit breaking, and SSE.
+- Stable local OpenAI-compatible routing, native Messages API, bounded RunspacePool,
+  cross-protocol tools, circuit breaking, health/readiness, metrics, and hot reload.
 - Cross-platform CI and a small auditable PowerShell codebase.
 
 ### Next
 
-- Add an inbound Anthropic Messages facade for native Claude Code compatibility.
-- Replace one ThreadJob per request with a bounded reusable worker pool.
-- Broaden OpenAI Responses API coverage and adapter tool-call translation.
-- Add configuration-schema documentation and more provider-specific examples.
+- Broaden Responses API and tool edge-case coverage.
+- More protocol/schema conformance tests against local mocks.
+- Improve routing-only hot-loop allocations.
 
 ### Future
 
 - Optional Windows service integration.
-- Metrics suitable for local observability without a telemetry SaaS dependency.
+- More local observability without a telemetry SaaS dependency.
 
 ### Not planned
 
-- Web dashboard, database, MCP server, MITM/TPROXY, browser automation, RAG, vector DB,
+- Web dashboard, database, MCP host, MITM/TPROXY, browser automation, RAG, vector DB,
   token compression, account system, or mandatory Docker deployment.
 
 ## License

@@ -143,6 +143,52 @@ function ConvertTo-OmniRouteConfig {
         $healthCacheSeconds = 15
     }
 
+    $serverRaw = Get-OmniRouteDictValue -Dictionary $RawConfig -Name 'server' -Default @{}
+    if ($serverRaw -isnot [System.Collections.IDictionary]) { $errors.Add((New-OmniRouteIssue -Path 'server' -Message 'Must be an object.')); $serverRaw = @{} }
+    $server = @{
+        minWorkers          = [int](Get-OmniRouteDictValue -Dictionary $serverRaw -Name 'minWorkers' -Default 2)
+        maxWorkers          = [int](Get-OmniRouteDictValue -Dictionary $serverRaw -Name 'maxWorkers' -Default ([Math]::Max(2, [Math]::Min(8, [Environment]::ProcessorCount))))
+        maxQueuedRequests   = [int](Get-OmniRouteDictValue -Dictionary $serverRaw -Name 'maxQueuedRequests' -Default 64)
+        shutdownGraceSeconds = [int](Get-OmniRouteDictValue -Dictionary $serverRaw -Name 'shutdownGraceSeconds' -Default 5)
+    }
+    if ($server.minWorkers -lt 1 -or $server.minWorkers -gt 128) {
+        $errors.Add((New-OmniRouteIssue -Path 'server.minWorkers' -Message 'Must be from 1 to 128.'))
+        $server.minWorkers = 2
+    }
+    if ($server.maxWorkers -lt 1 -or $server.maxWorkers -gt 128) {
+        $errors.Add((New-OmniRouteIssue -Path 'server.maxWorkers' -Message 'Must be from 1 to 128.'))
+        $server.maxWorkers = 8
+    }
+    if ($server.minWorkers -gt $server.maxWorkers) {
+        $errors.Add((New-OmniRouteIssue -Path 'server.minWorkers' -Message 'Must be less than or equal to server.maxWorkers.'))
+        $server.minWorkers = $server.maxWorkers
+    }
+    if ($server.maxQueuedRequests -lt 0 -or $server.maxQueuedRequests -gt 10000) {
+        $errors.Add((New-OmniRouteIssue -Path 'server.maxQueuedRequests' -Message 'Must be from 0 to 10000.'))
+        $server.maxQueuedRequests = 64
+    }
+    if ($server.shutdownGraceSeconds -lt 0 -or $server.shutdownGraceSeconds -gt 300) {
+        $errors.Add((New-OmniRouteIssue -Path 'server.shutdownGraceSeconds' -Message 'Must be from 0 to 300 seconds.'))
+        $server.shutdownGraceSeconds = 5
+    }
+
+    $httpRaw = Get-OmniRouteDictValue -Dictionary $RawConfig -Name 'http' -Default @{}
+    if ($httpRaw -isnot [System.Collections.IDictionary]) { $errors.Add((New-OmniRouteIssue -Path 'http' -Message 'Must be an object.')); $httpRaw = @{} }
+    $corsRaw = Get-OmniRouteDictValue -Dictionary $httpRaw -Name 'cors' -Default @{}
+    if ($corsRaw -isnot [System.Collections.IDictionary]) { $errors.Add((New-OmniRouteIssue -Path 'http.cors' -Message 'Must be an object.')); $corsRaw = @{} }
+    $http = @{
+        cors = @{
+            enabled        = [bool](Get-OmniRouteDictValue -Dictionary $corsRaw -Name 'enabled' -Default $false)
+            allowedOrigins = @(ConvertTo-OmniRouteStringArray -Value (Get-OmniRouteDictValue -Dictionary $corsRaw -Name 'allowedOrigins' -Default @()))
+        }
+    }
+    foreach ($origin in @($http.cors.allowedOrigins)) {
+        $originUri = $null
+        if (-not [Uri]::TryCreate([string]$origin, [UriKind]::Absolute, [ref]$originUri) -or $originUri.Scheme -notin @('http', 'https') -or -not [string]::IsNullOrEmpty($originUri.AbsolutePath.TrimEnd('/')) -or $originUri.AbsolutePath -ne '/') {
+            $errors.Add((New-OmniRouteIssue -Path 'http.cors.allowedOrigins' -Message "Invalid origin '$origin'. Use scheme://host[:port] without a path."))
+        }
+    }
+
     $retryRaw = Get-OmniRouteDictValue -Dictionary $RawConfig -Name 'retry' -Default @{}
     $retry = @{
         maxAttempts = [int](Get-OmniRouteDictValue -Dictionary $retryRaw -Name 'maxAttempts' -Default 2)
@@ -241,7 +287,18 @@ function ConvertTo-OmniRouteConfig {
             $warnings.Add((New-OmniRouteIssue -Path "$providerPath.apiKeyEnv" -Message "Environment variable '$apiKeyEnv' is not set."))
         }
 
-        $defaultHeader = if ($type -eq 'anthropic' -or $type -eq 'gemini') { 'x-api-key' } else { 'Authorization' }
+        $capabilitiesRaw = Get-OmniRouteDictValue -Dictionary $providerRaw -Name 'capabilities' -Default @{}
+        if ($capabilitiesRaw -isnot [System.Collections.IDictionary]) { $errors.Add((New-OmniRouteIssue -Path "$providerPath.capabilities" -Message 'Must be an object.')); $capabilitiesRaw = @{} }
+        $capabilities = @{
+            chat      = [bool](Get-OmniRouteDictValue -Dictionary $capabilitiesRaw -Name 'chat' -Default $true)
+            responses = [bool](Get-OmniRouteDictValue -Dictionary $capabilitiesRaw -Name 'responses' -Default $true)
+            messages  = [bool](Get-OmniRouteDictValue -Dictionary $capabilitiesRaw -Name 'messages' -Default $true)
+            tools     = [bool](Get-OmniRouteDictValue -Dictionary $capabilitiesRaw -Name 'tools' -Default $true)
+            vision    = [bool](Get-OmniRouteDictValue -Dictionary $capabilitiesRaw -Name 'vision' -Default $false)
+            streaming = [bool](Get-OmniRouteDictValue -Dictionary $capabilitiesRaw -Name 'streaming' -Default $true)
+        }
+
+        $defaultHeader = if ($type -eq 'anthropic') { 'x-api-key' } elseif ($type -eq 'gemini') { 'x-goog-api-key' } else { 'Authorization' }
         $apiKeyHeader = [string](Get-OmniRouteDictValue -Dictionary $providerRaw -Name 'apiKeyHeader' -Default $defaultHeader)
         if ($apiKeyHeader -notmatch '^[!#$%&''*+.^_`|~0-9A-Za-z-]+$') {
             $errors.Add((New-OmniRouteIssue -Path "$providerPath.apiKeyHeader" -Message 'Invalid HTTP header name.'))
@@ -297,6 +354,7 @@ function ConvertTo-OmniRouteConfig {
             headers            = $headers
             models             = @(ConvertTo-OmniRouteStringArray -Value (Get-OmniRouteDictValue -Dictionary $providerRaw -Name 'models' -Default @()))
             healthPath         = [string](Get-OmniRouteDictValue -Dictionary $providerRaw -Name 'healthPath' -Default '')
+            capabilities       = $capabilities
         }
     }
 
@@ -353,6 +411,8 @@ function ConvertTo-OmniRouteConfig {
         circuitBreaker        = $breaker
         fallbackOnStatus      = @($fallbackOnStatus | ForEach-Object { [int]$_ })
         logging               = $logging
+        server                = $server
+        http                  = $http
         providers             = $providers
         routes                = $routes
         aliases               = $aliases
