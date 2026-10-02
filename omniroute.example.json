@@ -1,0 +1,83 @@
+{
+  "listen": "127.0.0.1",
+  "port": 20128,
+  "requestTimeoutSeconds": 120,
+  "maxRequestBodyBytes": 1048576,
+  "healthCacheSeconds": 15,
+  "retry": {
+    "maxAttempts": 2,
+    "baseDelayMs": 100
+  },
+  "circuitBreaker": {
+    "failureThreshold": 3,
+    "openSeconds": 30,
+    "halfOpenMaxAttempts": 1
+  },
+  "fallbackOnStatus": [429, 500, 502, 503, 504],
+  "logging": {
+    "level": "information",
+    "format": "console"
+  },
+  "providers": {
+    "openai": {
+      "type": "openai",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "priority": 100,
+      "enabled": true,
+      "models": ["gpt-5", "gpt-5-mini"]
+    },
+    "deepseek": {
+      "type": "openai",
+      "baseUrl": "https://api.deepseek.com/v1",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "priority": 80,
+      "enabled": true,
+      "models": ["deepseek-chat", "deepseek-reasoner"]
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com/v1",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "priority": 70,
+      "enabled": true,
+      "models": ["claude-sonnet-4-5", "claude-haiku-4-5"]
+    },
+    "gemini": {
+      "type": "gemini",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta",
+      "apiKeyEnv": "GEMINI_API_KEY",
+      "apiKeyHeader": "x-goog-api-key",
+      "priority": 60,
+      "enabled": true,
+      "models": ["gemini-2.5-flash", "gemini-2.5-pro"]
+    },
+    "ollama": {
+      "type": "ollama",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "priority": 40,
+      "enabled": true,
+      "models": ["qwen3:8b", "llama3.2:3b"]
+    },
+    "lmstudio": {
+      "type": "custom-openai",
+      "baseUrl": "http://127.0.0.1:1234/v1",
+      "priority": 30,
+      "enabled": false,
+      "models": ["local-model"]
+    }
+  },
+  "routes": {
+    "gpt-*": ["openai", "deepseek"],
+    "claude-*": ["anthropic", "openai"],
+    "gemini-*": ["gemini", "openai"],
+    "deepseek-*": ["deepseek", "openai", "anthropic"],
+    "qwen*": ["ollama", "deepseek"],
+    "*": ["deepseek", "openai", "ollama"]
+  },
+  "aliases": {
+    "fast": "deepseek-chat",
+    "reasoning": "deepseek-reasoner",
+    "local": "qwen3:8b"
+  }
+}

@@ -1,0 +1,91 @@
+name: PowerShell CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PowerShell modules
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module Pester -MinimumVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module PSScriptAnalyzer -MinimumVersion 1.22.0 -Scope CurrentUser -Force
+
+      - name: Static analysis
+        shell: pwsh
+        run: |
+          Import-Module PSScriptAnalyzer
+          $settings = Join-Path $PWD 'PSScriptAnalyzerSettings.psd1'
+          $issues = @()
+          $issues += @(Invoke-ScriptAnalyzer -Path ./src -Recurse -Settings $settings)
+          $issues += @(Invoke-ScriptAnalyzer -Path ./scripts -Recurse -Settings $settings)
+          $issues += @(Invoke-ScriptAnalyzer -Path ./omniroute.ps1 -Settings $settings)
+          if ($issues.Count -gt 0) {
+            $issues | Format-Table -AutoSize
+            exit 1
+          }
+
+      - name: Pester
+        shell: pwsh
+        run: |
+          Import-Module Pester
+          $result = Invoke-Pester -Path ./tests -Output Detailed -PassThru
+          if ($result.FailedCount -gt 0) { exit 1 }
+
+      - name: Validate configuration
+        shell: pwsh
+        run: |
+          $result = pwsh -NoProfile -File ./omniroute.ps1 check -Config ./omniroute.example.json -Json | ConvertFrom-Json
+          if (-not $result.valid) { exit 1 }
+
+      - name: Startup smoke test
+        shell: pwsh
+        run: |
+          $port = 20128
+          $job = Start-Job -ScriptBlock {
+            param($Root, $Port)
+            Set-Location $Root
+            pwsh -NoProfile -File ./omniroute.ps1 serve -Config ./omniroute.example.json -Port $Port
+          } -ArgumentList @($PWD.Path, $port)
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 50; $i++) {
+              try {
+                $health = Invoke-RestMethod "http://127.0.0.1:$port/health" -TimeoutSec 2
+                if ($health.status) { $ready = $true; break }
+              }
+              catch { Start-Sleep -Milliseconds 200 }
+            }
+            if (-not $ready) {
+              Receive-Job -Job $job -Keep | Write-Host
+              throw 'OmniRoute-PS did not become ready.'
+            }
+            $models = Invoke-RestMethod "http://127.0.0.1:$port/v1/models" -TimeoutSec 5
+            if (@($models.data).Count -eq 0) { throw 'Model list was empty.' }
+          }
+          finally {
+            Stop-Job -Job $job -ErrorAction SilentlyContinue
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+          }

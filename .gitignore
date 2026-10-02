@@ -1,0 +1,16 @@
+# Local configuration may contain secrets through environment-variable references.
+omniroute.json
+.env
+.env.*
+
+# Runtime and test output.
+*.log
+TestResults.xml
+coverage.xml
+.Pester/
+
+# Editor and OS noise.
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
