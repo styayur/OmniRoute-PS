@@ -1,0 +1,4 @@
+[commands.build]
+program = "pwsh"
+args = ["-NoProfile", "-File", "./omniroute.ps1", "config", "validate", "-Config", "./omniroute.example.json", "-Json"]
+timeout_secs = 300
