@@ -1,7 +1,3 @@
-<div align="center">
-
-<img src="assets/brand/logo-mark.svg" width="88" alt="OmniRoute-PS logo" />
-
 # OmniRoute-PS
 
 **A small, local-first OpenAI-compatible LLM router for PowerShell 7.**
@@ -13,10 +9,7 @@
 [![CI](https://github.com/styayur/OmniRoute-PS/actions/workflows/ci.yml/badge.svg)](https://github.com/styayur/OmniRoute-PS/actions/workflows/ci.yml)
 [![release](https://img.shields.io/github/v/release/styayur/OmniRoute-PS)](https://github.com/styayur/OmniRoute-PS/releases/latest)
 [![license: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![PowerShell 7.4+](https://img.shields.io/badge/PowerShell-7.4%2B-5391FE?logo=powershell&logoColor=white)]()
-[![local-first](https://img.shields.io/badge/local--first-0f172a)]()
 
-</div>
 
 > **OmniRoute-PS is an independent lightweight reimplementation inspired by the routing concepts of OmniRoute.**
 > **It is not a drop-in rewrite of the full OmniRoute platform.**
@@ -27,6 +20,28 @@ modern .NET, JSON configuration, no database, no browser UI, no Node.js, no Pyth
 no Electron, and no bundled provider SDKs.
 
 ## Project positioning
+
+### Checked configuration example
+
+From the repository root:
+
+```powershell
+pwsh ./omniroute.ps1 check -ConfigPath ./omniroute.example.json
+```
+
+Actual output excerpt captured on 2026-10-08 (checkout path and provider warnings
+omitted; no provider request was made):
+
+```text
+valid     : True
+errors    : {}
+providers : 6
+routes    : 6
+aliases   : 3
+```
+
+The example warns that external provider credentials are unset. This verifies
+configuration parsing; it does not demonstrate authenticated inference.
 
 OmniRoute-PS is for developers who already use CLI and IDE clients that can point at an
 OpenAI-compatible base URL. Typical examples include Codex, Cline, Continue, OpenCode,
