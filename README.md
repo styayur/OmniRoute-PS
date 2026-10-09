@@ -631,6 +631,31 @@ pwsh ./scripts/benchmark.ps1 -Json
 
 ## Architecture
 
+<!-- architecture:overview:start -->
+```mermaid
+flowchart TB
+  Client[HTTP client] --> Entry[HttpListener / bounded RunspacePool]
+  Entry --> IR[Protocol: canonical request]
+  IR --> Resolve[Router: model aliases and route matching]
+  Resolve --> Rank[Capability filter / health scoring]
+  Health[(Process-local health / circuit state)] <--> Rank
+  Rank --> Adapter[Protocol conversion / endpoint and headers]
+  Adapter --> Transport[HttpClient: timeout / retry / cancellation]
+  Transport <-->|HTTP API / SSE| Provider[Configured upstream provider]
+  Transport --> Convert[Canonical response / stream conversion]
+  Convert --> Entry
+  Transport -->|success / failure| Health
+  Transport -.->|eligible failure before stream starts| Rank
+  Config[(Validated JSON / environment key references)] --> Entry
+```
+<!-- architecture:overview:end -->
+
+Model resolution and health scoring are functions within Router.ps1, not separate services. Server.ps1 converts inbound protocol messages to canonical IR; Router.ps1 selects usable candidates and combines Protocol.ps1 conversion with Adapters.ps1 endpoint/header resolution. Transport owns HTTP requests and streaming sessions. The return path is converted back to the client's protocol.
+
+Health/circuit state is shared in-process and resets on restart; there is no database or distributed coordinator. Bounded queue overload returns 503. Invalid config reload retains the previous config. Fallback can select another provider before a stream begins, but a mid-stream failure cannot restart transparently. Provider credentials are resolved from environment variables; the default listener is local and CORS is disabled unless configured.
+
+[Source evidence and diagram verification](docs/architecture/README.md).
+
 ```text
 omniroute.ps1
   -> Version.ps1      one version source for CLI, health, and User-Agent
