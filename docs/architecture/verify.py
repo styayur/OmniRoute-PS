@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -18,6 +19,7 @@ def require(condition, message):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--render', action='store_true')
     parser.add_argument('--chrome', help='Optional installed Chrome/Chromium executable')
@@ -50,7 +52,7 @@ def main():
             path = (root if url.path.startswith('/') else md.parent) / unquote(url.path.lstrip('/'))
             require(path.exists(), f'Missing local reference in {md.name}: {ref}')
             count += 1
-    print(f'PASS: authoritative diagram, {len(evidence["sources"])} source files, {count} local references')
+    logging.info(f'PASS: authoritative diagram, {len(evidence["sources"])} source files, {count} local references')
     if not args.render:
         return
     npx = shutil.which('npx.cmd') or shutil.which('npx')
@@ -79,8 +81,8 @@ def main():
         require('Syntax error' not in ''.join(tree.getroot().itertext()), 'Mermaid rendered an error')
         renders.append(hashlib.sha256(svg.read_bytes()).hexdigest())
     require(renders[0] == renders[1], 'Repeated rendering differs')
-    print(f'PASS: Mermaid syntax, light/dark SVG XML, deterministic repeat: {renders[0]}')
-    print(f'Verification artifacts: {out}')
+    logging.info(f'PASS: Mermaid syntax, light/dark SVG XML, deterministic repeat: {renders[0]}')
+    logging.info(f'Verification artifacts: {out}')
 
 
 if __name__ == '__main__':
