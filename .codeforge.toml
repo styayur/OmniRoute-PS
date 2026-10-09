@@ -7,3 +7,9 @@ timeout_secs = 300
 program = "pwsh"
 args = ["-NoProfile", "-File", "./omniroute.ps1", "config", "validate", "-Config", "./omniroute.example.json", "-Json"]
 timeout_secs = 300
+
+# Select the actual PowerShell suite; docs/architecture/verify.py is not a Python application.
+[commands.test]
+program = "pwsh"
+args = ["-NoProfile", "-Command", "Import-Module Pester -RequiredVersion 5.7.1; $result = Invoke-Pester -Path ./tests -PassThru; if ($result.FailedCount -gt 0 -or $result.PassedCount -eq 0) { exit 1 }"]
+timeout_secs = 600

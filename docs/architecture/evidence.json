@@ -1,0 +1,56 @@
+{
+  "source_commit": "c3cdbf78d17515edd1b875be56d5affc9462417e",
+  "reviewed_on": "2026-10-09",
+  "diagram_source": "README.md",
+  "sources": [
+    {
+      "path": "src/Server.ps1",
+      "anchors": [
+        "RunspacePool",
+        "ConvertTo-OmniRouteCanonicalRequest",
+        "503"
+      ]
+    },
+    {
+      "path": "src/Router.ps1",
+      "anchors": [
+        "Resolve-OmniRouteModel",
+        "Get-OmniRouteProviderScore",
+        "Get-OmniRouteCandidates",
+        "Start-OmniRouteStream",
+        "Invoke-OmniRouteStream"
+      ]
+    },
+    {
+      "path": "src/Health.ps1",
+      "anchors": [
+        "Get-OmniCircuitState",
+        "Set-OmniProviderFailure"
+      ]
+    },
+    {
+      "path": "src/Protocol.ps1",
+      "anchors": [
+        "ConvertFrom-OmniRouteCanonicalRequest"
+      ]
+    },
+    {
+      "path": "src/Adapters.ps1",
+      "anchors": [
+        "Get-OmniRouteProviderHeaders"
+      ]
+    },
+    {
+      "path": "src/Transport.ps1",
+      "anchors": [
+        "Invoke-OmniRouteUpstreamRequest"
+      ]
+    },
+    {
+      "path": "src/Config.ps1",
+      "anchors": [
+        "Get-OmniRouteApiKey"
+      ]
+    }
+  ]
+}
