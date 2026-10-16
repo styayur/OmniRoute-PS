@@ -23,7 +23,7 @@ To remove a checkout, stop the router, preserve your configuration, then remove 
 
 `scripts/install.ps1` copies into `$HOME/.omniroute`; `-AddToPath` changes the user PATH only when requested. It does not install a service. The script has no Dry Run/WhatIf mode.
 
-Source audit on 2026-10-16 found two defects: the non-Windows launcher resolves the entry script one directory too high, and the failure-recovery condition passes `-and` to `Test-Path` instead of evaluating a Boolean expression. The existing suite does not cover these installer paths. Use the reviewed checkout workflow pending a tested repair; do not rely on automatic rollback.
+Source audit on 2026-10-16 found two defects: the non-Windows launcher resolves the entry script one directory too high, and the failure-recovery condition passes `-and` to `Test-Path` instead of evaluating a Boolean expression. Both are repaired in current source, with regression tests for generated-launcher argument/exit-code forwarding and restoration after a staged-move failure. The published v0.2.0 archive predates this repair; use a reviewed current checkout for the installer.
 
 Existing default installations can be removed with the command below **after backing up configuration**. Uninstall recursively deletes the entire installation directory and removes its user PATH entry, including a pre-existing matching entry. Custom roots must be dedicated directories under your home; never point the installer at a directory containing unrelated files. For a custom installation, pass its exact `-InstallRoot` during uninstall; it is not inferred from the script location.
 

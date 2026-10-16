@@ -106,7 +106,7 @@ try {
         $shellLauncher = @(
             '#!/usr/bin/env pwsh'
             '$root = Split-Path -Parent $PSScriptRoot'
-            '& (Join-Path $root ''../omniroute.ps1'') @args'
+            '& (Join-Path $root ''omniroute.ps1'') @args'
             'exit $LASTEXITCODE'
         ) -join "`n"
         $shellLauncher | Set-Content -LiteralPath $launcher -Encoding utf8
@@ -123,7 +123,7 @@ try {
 }
 catch {
     if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
-    if (Test-Path -LiteralPath $backup -and -not (Test-Path -LiteralPath $installPath)) {
+    if ((Test-Path -LiteralPath $backup) -and -not (Test-Path -LiteralPath $installPath)) {
         Move-Item -LiteralPath $backup -Destination $installPath
     }
     throw

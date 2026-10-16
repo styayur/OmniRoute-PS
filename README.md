@@ -61,7 +61,7 @@ pwsh ./omniroute.ps1 help
 - OpenAI Chat, limited Responses and Anthropic Messages paths are tested with local mocks. This does not certify every desktop client or live provider.
 - Streaming cannot fail over after response headers are sent. Health, metrics and circuit state are process-local and reset on restart.
 - Listen address/port changes require restart. No client authentication or multi-user isolation is provided.
-- Prefer a checkout/archive: the optional installer's non-Windows launcher and failure-recovery path have [known defects](docs/installation.md#optional-installer-current-limitations).
+- Prefer a checkout/archive: the published v0.2.0 optional installer has launcher/recovery defects, repaired in current source; see [installation details](docs/installation.md#optional-installer-current-limitations).
 
 ## Documentation
 
