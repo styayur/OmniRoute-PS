@@ -2,7 +2,7 @@
 
 Source review: `c3cdbf78d17515edd1b875be56d5affc9462417e` (2026-10-09).
 
-The marked Mermaid block in [README](../../README.md) is the only maintained diagram source. GitHub renders it natively in the reader's theme. No duplicate SVG or independent `.mmd` is committed; extracted Mermaid and SVG files are disposable verification artifacts.
+The marked Mermaid block below is the only maintained diagram source. GitHub renders it natively in the reader's theme. No duplicate SVG or independent `.mmd` is committed; extracted Mermaid and SVG files are disposable verification artifacts.
 
 Model resolution and health scoring are functions within Router.ps1, not separate services. Server.ps1 converts inbound protocol messages to canonical IR; Router.ps1 selects usable candidates and combines Protocol.ps1 conversion with Adapters.ps1 endpoint/header resolution. Transport owns HTTP requests and streaming sessions. The return path is converted back to the client's protocol.
 
@@ -33,3 +33,106 @@ This checks local README image references and source anchors, extracts the autho
 GitDiagram returned an initial diagram on 2026-10-09 for the public repository as a discovery aid. Its page reported **0 source files read**, so its README-derived connections were checked directly against the local PowerShell source. Its generated output is not imported as authoritative architecture or licensed artwork. No private source, config or credentials were submitted.
 
 Existing repository licenses and third-party notices continue to apply. These diagrams are documentation authored from this repository's public source; no app icons, installer assets or third-party marks are replaced.
+
+
+## Overview
+
+<!-- architecture:overview:start -->
+```mermaid
+flowchart TB
+  Client[HTTP client] --> Entry[HttpListener / bounded RunspacePool]
+  Entry --> IR[Protocol: canonical request]
+  IR --> Resolve[Router: model aliases and route matching]
+  Resolve --> Rank[Capability filter / health scoring]
+  Health[(Process-local health / circuit state)] <--> Rank
+  Rank --> Adapter[Protocol conversion / endpoint and headers]
+  Adapter --> Transport[HttpClient: timeout / retry / cancellation]
+  Transport <-->|HTTP API / SSE| Provider[Configured upstream provider]
+  Transport --> Convert[Canonical response / stream conversion]
+  Convert --> Entry
+  Transport -->|success / failure| Health
+  Transport -.->|eligible failure before stream starts| Rank
+  Config[(Validated JSON / environment key references)] --> Entry
+```
+<!-- architecture:overview:end -->
+
+## RunspacePool server
+v0.2.0 replaces ThreadJob-per-request with a reusable native
+`System.Management.Automation.Runspaces.RunspacePool`.
+
+```text
+HTTP listener accepts request
+  -> bounded capacity check
+  -> PowerShell pipeline uses a pooled runspace
+  -> Invoke-OmniRouteHttpContext runs
+  -> worker returns to pool
+```
+
+- Workers import `src/OmniRoute.psm1` once at pool startup.
+- No request re-dot-sources source files.
+- `minWorkers`, `maxWorkers`, and `maxQueuedRequests` are bounded by config.
+- Saturation returns structured HTTP `503` with `Retry-After: 1`.
+- Client write failures cancel the associated upstream stream.
+- Shutdown stops acceptance, waits a bounded grace period, cancels remaining work,
+  and disposes the listener and runspace pool.
+
+## Canonical protocol IR
+OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages are normalized
+into one internal request/response shape before routing.
+
+```text
+Inbound protocol
+  -> Canonical IR
+  -> Router
+  -> Provider adapter
+  -> Canonical response/event
+  -> Inbound protocol
+```
+
+The IR includes:
+
+```text
+model
+messages[]
+  role
+  content[] text/image/tool_call/tool_result
+tools[]
+toolChoice
+stream
+generation temperature/topP/maxTokens/stop
+metadata
+```
+
+Streaming events are normalized to `message_start`, `content_delta`,
+`tool_call_start`, `tool_call_delta`, `message_end`, `error`, and `done`.
+
+## Benchmarks
+Measured on 2026-10-03 with PowerShell `7.6.5` on Windows `10.0.26200`,
+using the self-contained local mock provider in
+[`scripts/benchmark.ps1`](../../scripts/benchmark.ps1).
+
+| Metric | v0.1.0 baseline | v0.2.0 |
+| --- | ---: | ---: |
+| `version` cold start, 5-run average | 1037.7 ms | 872.7 ms |
+| Routing-only, 10,000 iterations | 0.5939 ms | 0.6958 ms |
+| 100 sequential local mock completions | 172.5 ms/request | 21.95 ms/request |
+| 20 parallel local mock completions | 1056.5 ms total | 815.4 ms total |
+| 50 parallel local mock completions | not measured | 552.0 ms total |
+| SSE first-chunk router delay | not measured | 108.6 ms |
+| Router idle working set | 106.3 MB | 109.7 MB |
+| Router loaded working set | 106.3 MB | 109.7 MB |
+| ThreadJob per request | 1 | 0 |
+| Per-request full dot-source | yes | no |
+
+These are single-machine observations, not performance guarantees. Startup and
+routing-only numbers vary with system load; sequential HTTP throughput is the clear
+v0.2 architectural improvement.
+
+Run the benchmark yourself:
+
+```powershell
+pwsh ./scripts/benchmark.ps1
+pwsh ./scripts/benchmark.ps1 -Json
+```
+
+Benchmark commands run from the repository root.
