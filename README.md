@@ -2,10 +2,10 @@
 
 A lightweight, local-first AI request router for PowerShell 7: one local endpoint, model routing and failover across configured providers.
 
-**Beta · PowerShell-native · CLI-first · Read-only-first · Reversible operations · Minimal dependencies**
+**Project stage:** Beta. PowerShell-native, CLI-first, with read-only inspection commands and documented recovery limits.
 
 [![CI](https://github.com/styayur/OmniRoute-PS/actions/workflows/ci.yml/badge.svg)](https://github.com/styayur/OmniRoute-PS/actions/workflows/ci.yml)
-[Releases](https://github.com/styayur/OmniRoute-PS/releases) · [Configuration](docs/configuration.md) · [Protocol scope](docs/protocols.md)
+[简体中文](README.zh-CN.md) · [Releases](https://github.com/styayur/OmniRoute-PS/releases) · [Configuration](docs/configuration.md) · [Protocol scope](docs/protocols.md)
 
 For developers whose scripts or clients accept a custom OpenAI-compatible or Anthropic endpoint. Route by model alias, wildcard or explicit provider; select capable providers and fall back on eligible upstream failures. No database, provider SDK or third-party PowerShell runtime module is required.
 
@@ -72,8 +72,6 @@ pwsh ./omniroute.ps1 help
 | Send requests and understand compatibility | [Protocol scope and examples](docs/protocols.md) |
 | Understand internals and measured benchmarks | [Architecture and source evidence](docs/architecture/README.md) |
 | Review version changes | [Changelog](CHANGELOG.md) |
-
-中文：这是本地优先的 PowerShell AI 请求路由工具。先运行 `check` 检查配置，再启动服务；不要将无客户端认证的监听端口暴露到不可信网络。协议测试不代表所有客户端和模型均兼容。
 
 ## License and contributing
 
